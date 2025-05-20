@@ -55,6 +55,7 @@ class Restaurant(BaseModel):
 class MCPRequest(BaseModel):
     query: str
     location: Optional[Dict[str, float]] = None
+    context: Optional[str] = None  # LLM 대화 컨텍스트 추가
 
 async def get_location_info(client_ip: str = None) -> Dict[str, Any]:
     try:
@@ -80,7 +81,7 @@ async def get_location_info(client_ip: str = None) -> Dict[str, Any]:
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"위치 정보 요청 실패: {str(e)}")
 
-async def get_restaurants(latitude: float, longitude: float) -> List[Restaurant]:
+async def get_restaurants(latitude: float, longitude: float, search_query: str = "맛집") -> List[Restaurant]:
     try:
         # 위도/경도 값 검증
         if not latitude or not longitude:
@@ -98,7 +99,7 @@ async def get_restaurants(latitude: float, longitude: float) -> List[Restaurant]
 
         headers = {"Authorization": f"KakaoAK {kakao_api_key}"}
         params = {
-            "query": "맛집",
+            "query": search_query,
             "x": str(longitude),
             "y": str(latitude),
             "radius": "1000",
@@ -149,30 +150,40 @@ async def root():
     return {"message": "MCP Restaurant Finder API"}
 
 @app.get("/sse")
-async def sse_endpoint(request: Request, query: str = "주변 맛집 추천해줘"):
+async def sse_endpoint(request: Request, query: str = "주변 맛집 추천해줘", context: Optional[str] = None):
     async def event_generator():
         try:
             # 클라이언트 IP 가져오기 (X-Forwarded-For 또는 X-Real-IP 헤더 확인)
             client_ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.client.host))
-            # X-Forwarded-For는 쉼표로 구분된 IP 목록일 수 있으므로 첫 번째 IP 사용
             if "," in client_ip:
                 client_ip = client_ip.split(",")[0].strip()
             
             logger.info(f"클라이언트 IP: {client_ip}")
+            logger.info(f"대화 컨텍스트: {context}")
             
             # 위치 정보 가져오기
             location = await get_location_info(client_ip)
             yield f"data: {json.dumps({'type': 'location', 'data': location})}\n\n"
             
-            # 맛집 정보 가져오기
-            restaurants = await get_restaurants(location["latitude"], location["longitude"])
+            # 맛집 정보 가져오기 (컨텍스트에 따라 검색어 수정)
+            search_query = "맛집"
+            if context:
+                # 컨텍스트에서 음식 종류나 선호도를 추출하여 검색어 수정
+                if "한식" in context:
+                    search_query = "한식 맛집"
+                elif "중식" in context:
+                    search_query = "중식 맛집"
+                elif "일식" in context:
+                    search_query = "일식 맛집"
+                # 추가적인 컨텍스트 기반 검색어 수정 가능
+            
+            restaurants = await get_restaurants(location["latitude"], location["longitude"], search_query)
             
             # 맛집 정보를 하나씩 스트리밍
             for restaurant in restaurants:
                 yield f"data: {json.dumps({'type': 'restaurant', 'data': restaurant.to_dict()})}\n\n"
-                await asyncio.sleep(0.5)  # 각 맛집 정보 사이에 0.5초 딜레이
+                await asyncio.sleep(0.5)
             
-            # 스트리밍 완료 메시지
             yield f"data: {json.dumps({'type': 'complete', 'message': '스트리밍이 완료되었습니다.'})}\n\n"
             
         except Exception as e:
