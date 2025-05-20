@@ -56,9 +56,14 @@ class MCPRequest(BaseModel):
     query: str
     location: Optional[Dict[str, float]] = None
 
-async def get_location_info() -> Dict[str, Any]:
+async def get_location_info(client_ip: str = None) -> Dict[str, Any]:
     try:
-        location_response = requests.get("http://ip-api.com/json/", timeout=5)
+        # 클라이언트 IP가 있으면 그 IP로 위치 확인
+        if client_ip:
+            location_response = requests.get(f"http://ip-api.com/json/{client_ip}", timeout=5)
+        else:
+            location_response = requests.get("http://ip-api.com/json/", timeout=5)
+            
         location_data = location_response.json()
         
         if location_data["status"] != "success":
@@ -77,6 +82,16 @@ async def get_location_info() -> Dict[str, Any]:
 
 async def get_restaurants(latitude: float, longitude: float) -> List[Restaurant]:
     try:
+        # 위도/경도 값 검증
+        if not latitude or not longitude:
+            raise HTTPException(status_code=400, detail="위도/경도 값이 유효하지 않습니다.")
+        
+        # 위도/경도 범위 검증
+        if not (-90 <= latitude <= 90):
+            raise HTTPException(status_code=400, detail="위도는 -90에서 90 사이여야 합니다.")
+        if not (-180 <= longitude <= 180):
+            raise HTTPException(status_code=400, detail="경도는 -180에서 180 사이여야 합니다.")
+
         kakao_api_key = os.getenv("KAKAO_API_KEY")
         if not kakao_api_key:
             raise HTTPException(status_code=500, detail="KAKAO_API_KEY가 설정되지 않았습니다.")
@@ -104,31 +119,49 @@ async def get_restaurants(latitude: float, longitude: float) -> List[Restaurant]
             
         restaurants = []
         for place in restaurant_data["documents"]:
-            restaurant = Restaurant(
-                name=place["place_name"],
-                address=place["address_name"],
-                category=place["category_name"],
-                distance=float(place["distance"]),
-                rating=float(place.get("rating", 0))
-            )
-            restaurants.append(restaurant)
+            try:
+                restaurant = Restaurant(
+                    name=place["place_name"],
+                    address=place["address_name"],
+                    category=place["category_name"],
+                    distance=float(place["distance"]),
+                    rating=float(place.get("rating", 0))
+                )
+                restaurants.append(restaurant)
+            except (ValueError, KeyError) as e:
+                logger.warning(f"맛집 데이터 처리 중 오류 발생: {str(e)}")
+                continue
         
+        if not restaurants:
+            raise HTTPException(status_code=404, detail="주변에 맛집을 찾을 수 없습니다.")
+            
         return restaurants
     except requests.exceptions.Timeout:
         raise HTTPException(status_code=504, detail="카카오 API 응답 시간 초과")
     except requests.exceptions.RequestException as e:
         raise HTTPException(status_code=500, detail=f"카카오 API 요청 실패: {str(e)}")
+    except Exception as e:
+        logger.error(f"맛집 정보 조회 중 에러 발생: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"맛집 정보 조회 실패: {str(e)}")
 
 @app.get("/")
 async def root():
     return {"message": "MCP Restaurant Finder API"}
 
 @app.get("/sse")
-async def sse_endpoint(query: str = "주변 맛집 추천해줘"):
+async def sse_endpoint(request: Request, query: str = "주변 맛집 추천해줘"):
     async def event_generator():
         try:
+            # 클라이언트 IP 가져오기 (X-Forwarded-For 또는 X-Real-IP 헤더 확인)
+            client_ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.client.host))
+            # X-Forwarded-For는 쉼표로 구분된 IP 목록일 수 있으므로 첫 번째 IP 사용
+            if "," in client_ip:
+                client_ip = client_ip.split(",")[0].strip()
+            
+            logger.info(f"클라이언트 IP: {client_ip}")
+            
             # 위치 정보 가져오기
-            location = await get_location_info()
+            location = await get_location_info(client_ip)
             yield f"data: {json.dumps({'type': 'location', 'data': location})}\n\n"
             
             # 맛집 정보 가져오기
