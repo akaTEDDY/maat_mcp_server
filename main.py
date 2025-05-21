@@ -1,15 +1,45 @@
-from fastapi import FastAPI, HTTPException, Depends, Request
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, JSONResponse
-from pydantic import BaseModel
-import requests
-import os
-import json
+from mcp.server.fastmcp import FastMCP
 import asyncio
-from dotenv import load_dotenv
-from typing import List, Optional, Dict, Any
 import logging
-from datetime import datetime
+import requests
+from typing import Optional, Dict, Any
+from dotenv import load_dotenv
+import os
+
+# Create MCP server
+mcp = FastMCP(
+    name="Restaurant Finder",
+    instructions="You are a restaurant finder. You can find restaurants around the user's location.",
+    capabilities={
+        "tools": {
+            "listChanged": True,
+            "tools": [
+                {
+                    "name": "find_restaurants",
+                    "description": "Find restaurants around the user's location",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "Search query (e.g., '맛집', '한식 맛집')"
+                            },
+                            "context": {
+                                "type": "string",
+                                "description": "Previous conversation context (optional)"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            ]
+        },
+        "resources": {
+            "subscribe": True,
+            "listChanged": True
+        }
+    }
+)
 
 # 로깅 설정
 logging.basicConfig(
@@ -21,45 +51,8 @@ logger = logging.getLogger(__name__)
 
 load_dotenv()
 
-app = FastAPI(title="MCP Restaurant Finder")
-
-# CORS 설정
-origins = ["*"]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
-    max_age=3600,
-)
-
-class Restaurant(BaseModel):
-    name: str
-    address: str
-    category: str
-    distance: float
-    rating: Optional[float] = None
-
-    def to_dict(self) -> Dict[str, Any]:
-        return {
-            "name": self.name,
-            "address": self.address,
-            "category": self.category,
-            "distance": self.distance,
-            "rating": self.rating
-        }
-
-class MCPRequest(BaseModel):
-    query: str
-    location: Optional[Dict[str, float]] = None
-    context: Optional[str] = None  # LLM 대화 컨텍스트 추가
-
 async def get_location_info(client_ip: str = None) -> Dict[str, Any]:
     try:
-        # 클라이언트 IP가 있으면 그 IP로 위치 확인
         if client_ip:
             location_response = requests.get(f"http://ip-api.com/json/{client_ip}", timeout=5)
         else:
@@ -68,7 +61,7 @@ async def get_location_info(client_ip: str = None) -> Dict[str, Any]:
         location_data = location_response.json()
         
         if location_data["status"] != "success":
-            raise HTTPException(status_code=400, detail="위치 정보를 가져올 수 없습니다.")
+            raise Exception("위치 정보를 가져올 수 없습니다.")
         
         return {
             "latitude": location_data["lat"],
@@ -77,25 +70,23 @@ async def get_location_info(client_ip: str = None) -> Dict[str, Any]:
             "country": location_data["country"]
         }
     except requests.exceptions.Timeout:
-        raise HTTPException(status_code=504, detail="위치 정보 서버 응답 시간 초과")
+        raise Exception("위치 정보 서버 응답 시간 초과")
     except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"위치 정보 요청 실패: {str(e)}")
+        raise Exception(f"위치 정보 요청 실패: {str(e)}")
 
-async def get_restaurants(latitude: float, longitude: float, search_query: str = "맛집") -> List[Restaurant]:
+async def get_restaurants(latitude: float, longitude: float, search_query: str = "맛집"):
     try:
-        # 위도/경도 값 검증
         if not latitude or not longitude:
-            raise HTTPException(status_code=400, detail="위도/경도 값이 유효하지 않습니다.")
+            raise Exception("위도/경도 값이 유효하지 않습니다.")
         
-        # 위도/경도 범위 검증
         if not (-90 <= latitude <= 90):
-            raise HTTPException(status_code=400, detail="위도는 -90에서 90 사이여야 합니다.")
+            raise Exception("위도는 -90에서 90 사이여야 합니다.")
         if not (-180 <= longitude <= 180):
-            raise HTTPException(status_code=400, detail="경도는 -180에서 180 사이여야 합니다.")
+            raise Exception("경도는 -180에서 180 사이여야 합니다.")
 
         kakao_api_key = os.getenv("KAKAO_API_KEY")
         if not kakao_api_key:
-            raise HTTPException(status_code=500, detail="KAKAO_API_KEY가 설정되지 않았습니다.")
+            raise Exception("KAKAO_API_KEY가 설정되지 않았습니다.")
 
         headers = {"Authorization": f"KakaoAK {kakao_api_key}"}
         params = {
@@ -116,101 +107,64 @@ async def get_restaurants(latitude: float, longitude: float, search_query: str =
         restaurant_data = restaurant_response.json()
         
         if "documents" not in restaurant_data:
-            raise HTTPException(status_code=400, detail="맛집 정보를 가져올 수 없습니다.")
+            raise Exception("맛집 정보를 가져올 수 없습니다.")
             
         restaurants = []
         for place in restaurant_data["documents"]:
             try:
-                restaurant = Restaurant(
-                    name=place["place_name"],
-                    address=place["address_name"],
-                    category=place["category_name"],
-                    distance=float(place["distance"]),
-                    rating=float(place.get("rating", 0))
-                )
+                restaurant = {
+                    "name": place["place_name"],
+                    "address": place["address_name"],
+                    "category": place["category_name"],
+                    "distance": float(place["distance"]),
+                    "rating": float(place.get("rating", 0))
+                }
                 restaurants.append(restaurant)
             except (ValueError, KeyError) as e:
                 logger.warning(f"맛집 데이터 처리 중 오류 발생: {str(e)}")
                 continue
         
         if not restaurants:
-            raise HTTPException(status_code=404, detail="주변에 맛집을 찾을 수 없습니다.")
+            raise Exception("주변에 맛집을 찾을 수 없습니다.")
             
         return restaurants
-    except requests.exceptions.Timeout:
-        raise HTTPException(status_code=504, detail="카카오 API 응답 시간 초과")
-    except requests.exceptions.RequestException as e:
-        raise HTTPException(status_code=500, detail=f"카카오 API 요청 실패: {str(e)}")
     except Exception as e:
         logger.error(f"맛집 정보 조회 중 에러 발생: {str(e)}")
-        raise HTTPException(status_code=500, detail=f"맛집 정보 조회 실패: {str(e)}")
+        raise
 
-@app.get("/")
-async def root():
-    return {"message": "MCP Restaurant Finder API"}
-
-@app.get("/sse")
-async def sse_endpoint(request: Request, query: str = "주변 맛집 추천해줘", context: Optional[str] = None):
-    async def event_generator():
-        try:
-            # MCP 프로토콜에 맞는 초기 응답
-            yield f"data: {json.dumps({'type': 'mcp:start', 'data': {'query': query}})}\n\n"
+async def handle_request(request) -> None:
+    try:
+        # 클라이언트 IP 가져오기
+        client_ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.remote_addr))
+        if "," in client_ip:
+            client_ip = client_ip.split(",")[0].strip()
+        
+        logger.info(f"클라이언트 IP: {client_ip}")
+        
+        # 위치 정보 가져오기
+        location = await get_location_info(client_ip)
+        await request.send_data({"location": location})
+        
+        # 맛집 정보 가져오기
+        search_query = "맛집"
+        if request.context:
+            if "한식" in request.context:
+                search_query = "한식 맛집"
+            elif "중식" in request.context:
+                search_query = "중식 맛집"
+            elif "일식" in request.context:
+                search_query = "일식 맛집"
+        
+        restaurants = await get_restaurants(location["latitude"], location["longitude"], search_query)
+        
+        # 맛집 정보를 스트리밍
+        for restaurant in restaurants:
+            await request.send_data({"restaurant": restaurant})
+            await asyncio.sleep(0.5)
             
-            # 클라이언트 IP 가져오기
-            client_ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.client.host))
-            if "," in client_ip:
-                client_ip = client_ip.split(",")[0].strip()
-            
-            logger.info(f"클라이언트 IP: {client_ip}")
-            logger.info(f"대화 컨텍스트: {context}")
-            
-            # 위치 정보 가져오기
-            location = await get_location_info(client_ip)
-            yield f"data: {json.dumps({'type': 'mcp:data', 'data': {'location': location}})}\n\n"
-            
-            # 맛집 정보 가져오기
-            search_query = "맛집"
-            if context:
-                if "한식" in context:
-                    search_query = "한식 맛집"
-                elif "중식" in context:
-                    search_query = "중식 맛집"
-                elif "일식" in context:
-                    search_query = "일식 맛집"
-            
-            restaurants = await get_restaurants(location["latitude"], location["longitude"], search_query)
-            
-            # 맛집 정보를 MCP 형식으로 스트리밍
-            for restaurant in restaurants:
-                yield f"data: {json.dumps({'type': 'mcp:data', 'data': {'restaurant': restaurant.to_dict()}})}\n\n"
-                await asyncio.sleep(0.5)
-            
-            # MCP 프로토콜에 맞는 종료 응답
-            yield f"data: {json.dumps({'type': 'mcp:end', 'data': {'message': '스트리밍이 완료되었습니다.'}})}\n\n"
-            
-        except Exception as e:
-            logger.error(f"SSE 에러: {str(e)}")
-            yield f"data: {json.dumps({'type': 'mcp:error', 'data': {'message': str(e)}})}\n\n"
-
-    return StreamingResponse(
-        event_generator(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-            "Access-Control-Allow-Origin": "*",
-            "Access-Control-Allow-Headers": "Content-Type, Authorization",
-            "Access-Control-Allow-Methods": "GET, OPTIONS",
-            "Access-Control-Allow-Credentials": "true"
-        }
-    )
+    except Exception as e:
+        logger.error(f"요청 처리 중 에러 발생: {str(e)}")
+        await request.send_error(str(e))
 
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(
-        app,
-        host="0.0.0.0",
-        port=8000,
-        timeout_keep_alive=75  # keep-alive 타임아웃 증가
-    ) 
+    mcp.run(transport="sse")
