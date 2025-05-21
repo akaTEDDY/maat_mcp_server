@@ -153,7 +153,10 @@ async def root():
 async def sse_endpoint(request: Request, query: str = "주변 맛집 추천해줘", context: Optional[str] = None):
     async def event_generator():
         try:
-            # 클라이언트 IP 가져오기 (X-Forwarded-For 또는 X-Real-IP 헤더 확인)
+            # MCP 프로토콜에 맞는 초기 응답
+            yield f"data: {json.dumps({'type': 'mcp:start', 'data': {'query': query}})}\n\n"
+            
+            # 클라이언트 IP 가져오기
             client_ip = request.headers.get("X-Forwarded-For", request.headers.get("X-Real-IP", request.client.host))
             if "," in client_ip:
                 client_ip = client_ip.split(",")[0].strip()
@@ -163,32 +166,31 @@ async def sse_endpoint(request: Request, query: str = "주변 맛집 추천해�
             
             # 위치 정보 가져오기
             location = await get_location_info(client_ip)
-            yield f"data: {json.dumps({'type': 'location', 'data': location})}\n\n"
+            yield f"data: {json.dumps({'type': 'mcp:data', 'data': {'location': location}})}\n\n"
             
-            # 맛집 정보 가져오기 (컨텍스트에 따라 검색어 수정)
+            # 맛집 정보 가져오기
             search_query = "맛집"
             if context:
-                # 컨텍스트에서 음식 종류나 선호도를 추출하여 검색어 수정
                 if "한식" in context:
                     search_query = "한식 맛집"
                 elif "중식" in context:
                     search_query = "중식 맛집"
                 elif "일식" in context:
                     search_query = "일식 맛집"
-                # 추가적인 컨텍스트 기반 검색어 수정 가능
             
             restaurants = await get_restaurants(location["latitude"], location["longitude"], search_query)
             
-            # 맛집 정보를 하나씩 스트리밍
+            # 맛집 정보를 MCP 형식으로 스트리밍
             for restaurant in restaurants:
-                yield f"data: {json.dumps({'type': 'restaurant', 'data': restaurant.to_dict()})}\n\n"
+                yield f"data: {json.dumps({'type': 'mcp:data', 'data': {'restaurant': restaurant.to_dict()}})}\n\n"
                 await asyncio.sleep(0.5)
             
-            yield f"data: {json.dumps({'type': 'complete', 'message': '스트리밍이 완료되었습니다.'})}\n\n"
+            # MCP 프로토콜에 맞는 종료 응답
+            yield f"data: {json.dumps({'type': 'mcp:end', 'data': {'message': '스트리밍이 완료되었습니다.'}})}\n\n"
             
         except Exception as e:
             logger.error(f"SSE 에러: {str(e)}")
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'mcp:error', 'data': {'message': str(e)}})}\n\n"
 
     return StreamingResponse(
         event_generator(),
@@ -196,7 +198,11 @@ async def sse_endpoint(request: Request, query: str = "주변 맛집 추천해�
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
-            "X-Accel-Buffering": "no"
+            "X-Accel-Buffering": "no",
+            "Access-Control-Allow-Origin": "*",
+            "Access-Control-Allow-Headers": "Content-Type, Authorization",
+            "Access-Control-Allow-Methods": "GET, OPTIONS",
+            "Access-Control-Allow-Credentials": "true"
         }
     )
 
