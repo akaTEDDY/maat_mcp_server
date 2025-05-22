@@ -255,22 +255,48 @@ async def find_restaurants(query: str, context: Optional[str] = None) -> Dict[st
         raise
 
 async def get_location_info(client_ip: str = None) -> Dict[str, Any]:
+    """IP 주소를 기반으로 위치 정보를 가져옵니다.
+    
+    Args:
+        client_ip: 클라이언트 IP 주소 (선택사항)
+    
+    Returns:
+        Dict[str, Any]: 위치 정보 (위도, 경도, 도시, 국가)
+    """
     try:
-        if client_ip:
-            location_response = requests.get(f"http://ip-api.com/json/{client_ip}", timeout=5)
-        else:
-            location_response = requests.get("http://ip-api.com/json/", timeout=5)
-            
-        location_data = location_response.json()
+
+        # IP 주소가 없는 경우 현재 IP 사용
+        if not client_ip:
+            client_ip = requests.get("https://api.ipify.org?format=json").json()["ip"]
+
+        # IP2Location.io API 호출
+        response = requests.get(
+            f"https://api.ip2location.io/?ip={client_ip}",
+            timeout=5
+        )
         
-        if location_data["status"] != "success":
-            raise Exception("위치 정보를 가져올 수 없습니다.")
+        if response.status_code != 200:
+            # IP2Location API 실패 시 ip-api.com으로 폴백
+            location_response = requests.get(f"http://ip-api.com/json/{client_ip}", timeout=5)
+            location_data = location_response.json()
+            
+            if location_data["status"] != "success":
+                raise Exception("위치 정보를 가져올 수 없습니다.")
+            
+            return {
+                "latitude": location_data["lat"],
+                "longitude": location_data["lon"],
+                "city": location_data["city"],
+                "country": location_data["country"]
+            }
+        
+        data = response.json()
         
         return {
-            "latitude": location_data["lat"],
-            "longitude": location_data["lon"],
-            "city": location_data["city"],
-            "country": location_data["country"]
+            "latitude": float(data["latitude"]),
+            "longitude": float(data["longitude"]),
+            "city": data["city_name"],
+            "country": data["country_name"]
         }
     except requests.exceptions.Timeout:
         raise Exception("위치 정보 서버 응답 시간 초과")
