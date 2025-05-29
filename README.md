@@ -1,6 +1,6 @@
 # MAAT MCP Restaurant Finder
 
-맛집 검색 및 추천 서비스를 제공하는 MCP(Multi-Conversation Protocol) 서버입니다.
+맛집 검색 및 추천 서비스를 제공하는 remote MCP(Model Context Protocol) server입니다.
 
 ## 주요 기능
 
@@ -13,7 +13,6 @@
 - Python 3.8+
 - FastMCP 0.4.1+
 - Google Maps API
-- IP2Location API
 
 ## 설치 방법
 
@@ -23,19 +22,12 @@ git clone https://github.com/akateddy/maat_mcp_server.git
 cd maat_mcp_server
 ```
 
-2. 가상환경 생성 및 활성화
-```bash
-python -m venv venv
-source venv/bin/activate  # Linux/Mac
-venv\Scripts\activate     # Windows
-```
-
-3. 의존성 설치
+2. 의존성 설치
 ```bash
 pip install -r requirements.txt
 ```
 
-4. 환경 변수 설정
+3. 환경 변수 설정
 `.env` 파일을 생성하고 다음 변수들을 설정합니다:
 ```
 GOOGLE_MAPS_API_KEY=your_google_maps_api_key
@@ -66,7 +58,6 @@ python main.py
 maat_mcp_server/
 ├── main.py              # 메인 애플리케이션
 ├── requirements.txt     # 의존성 목록
-├── Procfile            # 배포 설정
 └── maat_mcp/           # 핵심 패키지
     ├── api/            # API 클라이언트
     ├── handlers/       # 비즈니스 로직
@@ -85,6 +76,6 @@ MIT License
         "http://localhost:8000/sse"
       ],
   	  "env": {
-  		  "GOOGLE_MAPS_API_KEY": "AIzaSyAZdDmLSsh1jMYS44yTrYfhdP3tiryVskc"
+  		  "GOOGLE_MAPS_API_KEY": "{YOUR_GOOGLE_MAPS_API_KEY}"
   	  }
     }
