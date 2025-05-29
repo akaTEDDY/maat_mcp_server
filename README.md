@@ -19,7 +19,7 @@
 
 1. 저장소 클론
 ```bash
-git clone https://github.com/your-username/maat_mcp_server.git
+git clone https://github.com/akateddy/maat_mcp_server.git
 cd maat_mcp_server
 ```
 
@@ -76,3 +76,15 @@ maat_mcp_server/
 ## 라이선스
 
 MIT License 
+
+## claude_desktop_config 설정 방법
+"restaurants_finder": {
+      "command": "npx",
+      "args": [
+		"mcp-remote",
+        "http://localhost:8000/sse"
+      ],
+  	  "env": {
+  		  "GOOGLE_MAPS_API_KEY": "AIzaSyAZdDmLSsh1jMYS44yTrYfhdP3tiryVskc"
+  	  }
+    }
