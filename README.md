@@ -1,41 +1,78 @@
-# MCP Restaurant Finder
+# MAAT MCP Restaurant Finder
 
-FastAPI를 사용한 위치 기반 맛집 검색 서비스입니다.
+맛집 검색 및 추천 서비스를 제공하는 MCP(Multi-Conversation Protocol) 서버입니다.
 
-## 기능
+## 주요 기능
 
-- IP 기반 현재 위치 확인
-- 카카오 맵 API를 활용한 주변 맛집 검색
-- 거리 기반 정렬
-- 맛집 상세 정보 제공
+- **맛집 검색**: 사용자의 위치 기반으로 주변 맛집을 검색합니다.
+- **랜덤 추천**: 현재 위치 기반으로 랜덤 맛집을 추천합니다.
+- **카테고리별 검색**: 한식, 중식, 일식, 양식 등 카테고리별 맛집 검색을 지원합니다.
+
+## 기술 스택
+
+- Python 3.8+
+- FastMCP 0.4.1+
+- Google Maps API
+- IP2Location API
 
 ## 설치 방법
 
-1. 필요한 패키지 설치:
+1. 저장소 클론
+```bash
+git clone https://github.com/your-username/maat_mcp_server.git
+cd maat_mcp_server
+```
+
+2. 가상환경 생성 및 활성화
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+```
+
+3. 의존성 설치
 ```bash
 pip install -r requirements.txt
 ```
 
-2. 환경 변수 설정:
-- `.env` 파일을 생성하고 카카오 API 키를 설정합니다:
+4. 환경 변수 설정
+`.env` 파일을 생성하고 다음 변수들을 설정합니다:
 ```
-KAKAO_API_KEY=your_kakao_api_key_here
+GOOGLE_MAPS_API_KEY=your_google_maps_api_key
+IPLOCATION_API_KEY=your_iplocation_api_key
 ```
 
 ## 실행 방법
 
 ```bash
-uvicorn main:app --reload
+python main.py
 ```
 
 ## API 엔드포인트
 
-- `GET /`: API 상태 확인
-- `GET /location`: 현재 위치 정보 조회
-- `GET /restaurants?latitude={lat}&longitude={lon}`: 주변 맛집 검색
+### 리소스
+- `maat://restaurant_results`: 맛집 검색 결과 리소스
 
-## API 문서
+### 프롬프트
+- `맛집 검색`: 맛집 검색 프롬프트
 
-서버 실행 후 다음 URL에서 API 문서를 확인할 수 있습니다:
-- Swagger UI: http://localhost:8000/docs
-- ReDoc: http://localhost:8000/redoc 
+### 도구
+- `find_restaurants`: 맛집 검색 도구
+- `recommend_random_restaurant`: 랜덤 맛집 추천 도구
+
+## 프로젝트 구조
+
+```
+maat_mcp_server/
+├── main.py              # 메인 애플리케이션
+├── requirements.txt     # 의존성 목록
+├── Procfile            # 배포 설정
+└── maat_mcp/           # 핵심 패키지
+    ├── api/            # API 클라이언트
+    ├── handlers/       # 비즈니스 로직
+    └── util/           # 유틸리티 함수
+```
+
+## 라이선스
+
+MIT License 
