@@ -69,13 +69,15 @@ maat_mcp_server/
 MIT License 
 
 ## claude_desktop_config 설정 방법
+```
 "restaurants_finder": {
-      "command": "npx",
-      "args": [
+	"command": "npx",
+	"args": [
 		"mcp-remote",
-        "http://localhost:8000/sse"
-      ],
-  	  "env": {
-  		  "GOOGLE_MAPS_API_KEY": "{YOUR_GOOGLE_MAPS_API_KEY}"
-  	  }
-    }
+	"http://localhost:8000/sse"
+	],
+  	"env": {
+		"GOOGLE_MAPS_API_KEY": "{YOUR_GOOGLE_MAPS_API_KEY}"
+  	}
+}
+```
