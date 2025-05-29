@@ -74,7 +74,7 @@ MIT License
 	"command": "npx",
 	"args": [
 		"mcp-remote",
-	"http://localhost:8000/sse"
+		"http://localhost:8000/sse"
 	],
   	"env": {
 		"GOOGLE_MAPS_API_KEY": "{YOUR_GOOGLE_MAPS_API_KEY}"
