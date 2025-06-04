@@ -1,4 +1,5 @@
 import logging
+import os
 from mcp.server.fastmcp import FastMCP
 from maat_mcp.handlers.service_implementation import (
     find_restaurants,
@@ -65,7 +66,8 @@ async def recommend_random_restaurant_tool(category: str = None):
 
 if __name__ == "__main__":
     try:
-        mcp.run(transport="sse")
+        port = int(os.environ.get("PORT", 8000))
+        mcp.run(transport="sse", host="0.0.0.0", port=port)
     except Exception as e:
         logging.error(f"서버 실행 중 에러 발생: {str(e)}")
         raise
